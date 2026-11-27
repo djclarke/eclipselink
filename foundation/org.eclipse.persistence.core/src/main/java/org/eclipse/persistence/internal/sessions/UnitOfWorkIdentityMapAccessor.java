@@ -185,6 +185,8 @@ public class UnitOfWorkIdentityMapAccessor extends IdentityMapAccessor {
                         cacheKey.waitWhileAcquiredByAnotherWriter();
                         objectFromCache = cacheKey.getObject();
                     } catch (InterruptedException ex) {
+                        // Return no object, but keep the interrupt visible to the caller.
+                        Thread.currentThread().interrupt();
                     }
                 }
             } finally {

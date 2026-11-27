@@ -281,6 +281,8 @@ public class IsolatedClientSessionIdentityMapAccessor extends org.eclipse.persis
                         cacheKey.waitWhileAcquiredByAnotherWriter();
                         objectFromCache = cacheKey.getObject();
                     } catch (InterruptedException ex) {
+                        // Return no object, but keep the interrupt visible to the caller.
+                        Thread.currentThread().interrupt();
                     }
                 }
                 if (objectFromCache == null) {

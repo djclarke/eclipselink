@@ -126,8 +126,12 @@ public class CacheKeyConcurrencyTest {
                 fixture.awaitInterruptionHandling();
             }
             fixture.finishConstruction(true);
-            // These legacy APIs swallow InterruptedException; preserve that contract.
+            // These legacy APIs do not throw InterruptedException; preserve that contract.
             read.get(5, TimeUnit.SECONDS);
+            if (route != Route.SESSION_WAITLOOP) {
+                // WAITLOOP treats the interrupt as a deadlock signal and invalidates the key instead.
+                assertTrue(fixture.interruptedOnExit, "The interrupt must stay visible to the caller");
+            }
             fixture.assertReleased();
         }
     }
@@ -164,6 +168,7 @@ public class CacheKeyConcurrencyTest {
         final String previousMode = ConcurrencyUtil.SINGLETON.getConcurrencyManagerAllowGetCacheKeyForMergeMode();
         volatile CacheKey mergeKey;
         volatile boolean acquireReferenceKeyBeforeRead;
+        volatile boolean interruptedOnExit;
         boolean readOnly;
         boolean appendLock;
         Future<Object> result;
@@ -232,6 +237,7 @@ public class CacheKeyConcurrencyTest {
                     if (ownsReferenceKey) {
                         referenceKey.release();
                     }
+                    interruptedOnExit = Thread.currentThread().isInterrupted();
                 }
             });
             return result;

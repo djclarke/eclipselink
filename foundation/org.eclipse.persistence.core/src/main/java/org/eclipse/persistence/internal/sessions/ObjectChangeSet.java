@@ -531,6 +531,9 @@ public class ObjectChangeSet implements Serializable, Comparable<ObjectChangeSet
                     session.getIdentityMapAccessorInstance().getWriteLockManager().transitionToDeferredLocks(mergeManager);
                 }
                 cacheKey.acquireDeferredLock();
+                // Restored only after the deferred lock is released: releaseDeferredLock() may sleep
+                // while other threads finish building, and a pending interrupt would make it fail.
+                boolean interrupted = false;
                 try {
                     domainObject = cacheKey.getObject();
                     int tries = 0;
@@ -549,7 +552,10 @@ public class ObjectChangeSet implements Serializable, Comparable<ObjectChangeSet
                             try {
                                 cacheKey.getInstanceLockCondition().await(10, TimeUnit.MILLISECONDS);
                             } catch (InterruptedException e) {
-                                //ignore and return
+                                // Stop waiting and merge with what the cache holds.
+                                interrupted = true;
+                                domainObject = cacheKey.getObject();
+                                break;
                             }
                             domainObject = cacheKey.getObject();
                         } finally {
@@ -558,6 +564,9 @@ public class ObjectChangeSet implements Serializable, Comparable<ObjectChangeSet
                     }
                 } finally {
                     cacheKey.releaseDeferredLock();
+                }
+                if (interrupted) {
+                    Thread.currentThread().interrupt();
                 }
             }
         } else {
