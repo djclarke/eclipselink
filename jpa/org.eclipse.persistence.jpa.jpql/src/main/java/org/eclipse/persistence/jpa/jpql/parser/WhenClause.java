@@ -154,7 +154,7 @@ public final class WhenClause extends AbstractExpression {
     public JPQLQueryBNF findQueryBNF(Expression expression) {
 
         if ((whenExpression != null) && whenExpression.isAncestor(expression)) {
-            return getQueryBNF(InternalWhenClauseBNF.ID);
+            return getQueryBNF(whenExpressionBNFId());
         }
 
         if ((thenExpression != null) && thenExpression.isAncestor(expression)) {
@@ -289,7 +289,7 @@ public final class WhenClause extends AbstractExpression {
         hasSpaceAfterWhen = wordParser.skipLeadingWhitespace() > 0;
 
         // Parse the expression
-        whenExpression = parse(wordParser, InternalWhenClauseBNF.ID, tolerant);
+        whenExpression = parse(wordParser, whenExpressionBNFId(), tolerant);
         hasSpaceAfterWhenExpression = wordParser.skipLeadingWhitespace() > 0;
 
         // Parse 'THEN'
@@ -300,6 +300,29 @@ public final class WhenClause extends AbstractExpression {
 
         // Parse the then expression
         thenExpression = parse(wordParser, ScalarExpressionBNF.ID, tolerant);
+    }
+
+    /**
+     * Returns the unique identifier of the {@link JPQLQueryBNF} used to parse the expression
+     * following <b>WHEN</b>, which depends on the form of the owning <b>CASE</b> expression.
+     * <p>
+     * In a searched <b>CASE</b> expression (no case operand), the <b>WHEN</b> expression is a
+     * conditional expression, so a bare identifier is an identification variable or an implicit
+     * state field, exactly like in a <b>WHERE</b> clause. In a simple <b>CASE</b> expression, the
+     * <b>WHEN</b> expression is compared with the case operand and a bare identifier may be an
+     * entity type literal, e.g. <code>CASE TYPE(e) WHEN Exempt THEN ...</code>.
+     *
+     * @return The unique identifier of the BNF used to parse the <b>WHEN</b> expression
+     */
+    private String whenExpressionBNFId() {
+        Expression parent = getParent();
+        while (parent instanceof CollectionExpression) {
+            parent = parent.getParent();
+        }
+        if ((parent instanceof CaseExpression) && !((CaseExpression) parent).hasCaseOperand()) {
+            return ConditionalExpressionBNF.ID;
+        }
+        return InternalWhenClauseBNF.ID;
     }
 
     @Override
