@@ -626,6 +626,35 @@ public class CacheKey extends ConcurrencyManager implements Cloneable {
         }
     }
 
+    /**
+     * INTERNAL:
+     * Wait while another thread holds this key for writing. A writer can publish the object
+     * before it has finished building it, so readers must wait for the release rather than
+     * for the object. The caller must hold the instance lock.
+     * Like {@link #waitForObject()}, the wait is capped at {@link #MAX_WAIT_TRIES} retries.
+     *
+     * @throws ConcurrencyException if the other thread still holds the key after the cap
+     * @throws InterruptedException if the current thread is interrupted while waiting
+     */
+    public void waitWhileAcquiredByAnotherWriter() throws InterruptedException {
+        waitWhileAcquiredByAnotherWriter(MAX_WAIT_TRIES);
+    }
+
+    /**
+     * INTERNAL:
+     * Same as {@link #waitWhileAcquiredByAnotherWriter()} with an explicit retry cap.
+     */
+    public void waitWhileAcquiredByAnotherWriter(int maxTries) throws InterruptedException {
+        int count = 0;
+        while (isAcquiredForWritingAndOwnedByDifferentThread()) {
+            if (count > maxTries) {
+                throw ConcurrencyException.maxTriesLockOnBuildObjectExceded(getActiveThread(), Thread.currentThread());
+            }
+            getInstanceLockCondition().await(5, TimeUnit.MILLISECONDS);
+            ++count;
+        }
+    }
+
     @Override
     public boolean isCacheKey() {
         return true;

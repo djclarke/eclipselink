@@ -36,6 +36,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 /**
  * <p>
@@ -520,36 +521,64 @@ public class ObjectChangeSet implements Serializable, Comparable<ObjectChangeSet
         CacheKey cacheKey = session.getIdentityMapAccessorInstance().getCacheKeyForObject(primaryKey, descriptor.getJavaClass(), descriptor, true);
         if (cacheKey != null) {
             if (cacheKey.acquireReadLockNoWait()) {
-                domainObject = cacheKey.getObject();
-                cacheKey.releaseReadLock();
+                Throwable failure = null;
+                try {
+                    domainObject = cacheKey.getObject();
+                } catch (RuntimeException | Error e) {
+                    failure = e;
+                    throw e;
+                } finally {
+                    cacheKey.releaseReadLockAfter(failure);
+                }
             } else {
                 if (!mergeManager.isTransitionedToDeferredLocks()) {
                     session.getIdentityMapAccessorInstance().getWriteLockManager().transitionToDeferredLocks(mergeManager);
                 }
                 cacheKey.acquireDeferredLock();
-                domainObject = cacheKey.getObject();
-                int tries = 0;
-                while (domainObject == null) {
-                    ++tries;
-                    if (tries > MAX_TRIES){
-                        session.getParent().log(SessionLog.SEVERE, SessionLog.CACHE, "entity_not_available_during_merge", new Object[]{descriptor.getJavaClassName(), cacheKey.getKey(), Thread.currentThread().getName(), cacheKey.getActiveThread()});
-                        break;
-                    }
-                    cacheKey.getInstanceLock().lock();
-                    try {
-                        if (cacheKey.isAcquired()) {
-                            try {
-                                cacheKey.wait(10);
-                            } catch (InterruptedException e) {
-                                //ignore and return
-                            }
+                // Restored only after the deferred lock is released: releaseDeferredLock() may sleep
+                // while other threads finish building, and a pending interrupt would make it fail.
+                boolean interrupted = false;
+                Throwable failure = null;
+                try {
+                    domainObject = cacheKey.getObject();
+                    int tries = 0;
+                    while (domainObject == null) {
+                        ++tries;
+                        if (tries > MAX_TRIES){
+                            session.log(SessionLog.SEVERE, SessionLog.CACHE, "entity_not_available_during_merge", new Object[]{descriptor.getJavaClassName(), cacheKey.getKey(), Thread.currentThread().getName(), cacheKey.getActiveThread()});
+                            break;
                         }
-                        domainObject = cacheKey.getObject();
-                    } finally {
-                        cacheKey.getInstanceLock().unlock();
+                        cacheKey.getInstanceLock().lock();
+                        try {
+                            // Nobody else is building the object: the key is free (its writer released it,
+                            // possibly without publishing after a failed construction) or this thread now
+                            // owns it. Waiting cannot produce an object, so merge with what the key holds.
+                            if (!cacheKey.isAcquiredForWritingAndOwnedByDifferentThread()) {
+                                domainObject = cacheKey.getObject();
+                                break;
+                            }
+                            try {
+                                cacheKey.getInstanceLockCondition().await(10, TimeUnit.MILLISECONDS);
+                            } catch (InterruptedException e) {
+                                // Stop waiting and merge with what the cache holds.
+                                interrupted = true;
+                                domainObject = cacheKey.getObject();
+                                break;
+                            }
+                            domainObject = cacheKey.getObject();
+                        } finally {
+                            cacheKey.getInstanceLock().unlock();
+                        }
                     }
+                } catch (RuntimeException | Error e) {
+                    failure = e;
+                    throw e;
+                } finally {
+                    cacheKey.releaseDeferredLockAfter(failure);
                 }
-                cacheKey.releaseDeferredLock();
+                if (interrupted) {
+                    Thread.currentThread().interrupt();
+                }
             }
         } else {
             domainObject = mergeManager.registerExistingObjectOfReadOnlyClassInNestedTransaction(getUnitOfWorkClone(), descriptor, session);

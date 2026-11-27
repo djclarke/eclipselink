@@ -1,0 +1,98 @@
+/*
+ * Copyright (c) 2026 DruID. All rights reserved.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License v. 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0,
+ * or the Eclipse Distribution License v. 1.0 which is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+ */
+package org.eclipse.persistence.testing.tests.junit.identitymaps;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+
+import org.eclipse.persistence.testing.tests.junit.identitymaps.CacheKeyConcurrencyTest.Fixture;
+import org.eclipse.persistence.testing.tests.junit.identitymaps.CacheKeyConcurrencyTest.Route;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+
+import static org.eclipse.persistence.testing.tests.junit.identitymaps.CacheKeyConcurrencyTest.HANG_GUARD_SECONDS;
+import static org.junit.jupiter.api.Assertions.*;
+
+@Timeout(value = 120, unit = TimeUnit.SECONDS)
+public class SessionMergeLockRaceTest {
+    @Test
+    public void changeSetDoesNotWaitForAnEmptyKeyNowOwnedByTheReader() throws Exception {
+        releasesKeyBetweenReadAndDeferredAcquisition(Route.CHANGE_SET);
+    }
+
+    @Test
+    public void originDoesNotWaitForAnEmptyKeyNowOwnedByTheReader() throws Exception {
+        releasesKeyBetweenReadAndDeferredAcquisition(Route.SESSION_ORIGIN);
+    }
+
+    @Test
+    public void waitLoopBalancesTheEarlyReturnWhenTheOtherOwnerHasFinished() throws Exception {
+        releasesKeyBetweenReadAndDeferredAcquisition(Route.SESSION_WAITLOOP);
+    }
+
+    @Test
+    public void changeSetReturnsAtOnceWhenTheOtherOwnerReleasesAnEmptyKey() throws Exception {
+        try (Fixture fixture = new Fixture(Route.CHANGE_SET)) {
+            CountDownLatch deferred = new CountDownLatch(1);
+            CountDownLatch ownerReleased = new CountDownLatch(1);
+            // The reader records a deferred lock while the test thread still owns the empty key,
+            // then the owner releases it without publishing before the reader checks the key.
+            fixture.referenceKey.afterDeferredAcquire = () -> {
+                deferred.countDown();
+                try {
+                    assertTrue(ownerReleased.await(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
+                } catch (InterruptedException e) {
+                    throw new AssertionError(e);
+                }
+            };
+            Future<Object> read = fixture.start();
+            try {
+                assertTrue(deferred.await(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
+                assertSame(Thread.currentThread(), fixture.referenceKey.getActiveThread());
+                fixture.finishConstruction(false);
+                ownerReleased.countDown();
+                // Without the early exit the merge would retry for ObjectChangeSet.MAX_TRIES x 10 ms.
+                assertNull(read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
+                fixture.assertReleased();
+            } finally {
+                ownerReleased.countDown();
+            }
+        }
+    }
+
+    private void releasesKeyBetweenReadAndDeferredAcquisition(Route route) throws Exception {
+        try (Fixture fixture = new Fixture(route)) {
+            CountDownLatch beforeAcquire = new CountDownLatch(1);
+            CountDownLatch ownerReleased = new CountDownLatch(1);
+            fixture.referenceKey.beforeDeferredAcquire = () -> {
+                beforeAcquire.countDown();
+                try {
+                    assertTrue(ownerReleased.await(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
+                } catch (InterruptedException e) {
+                    throw new AssertionError(e);
+                }
+            };
+            Future<Object> read = fixture.start();
+            try {
+                assertTrue(beforeAcquire.await(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
+                // A failed/cancelled construction can release its key without publishing an object.
+                fixture.finishConstruction(false);
+                ownerReleased.countDown();
+                assertNull(read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
+                fixture.assertReleased();
+            } finally {
+                ownerReleased.countDown();
+            }
+        }
+    }
+}

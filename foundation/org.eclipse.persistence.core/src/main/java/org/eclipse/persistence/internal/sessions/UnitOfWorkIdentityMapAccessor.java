@@ -175,17 +175,19 @@ public class UnitOfWorkIdentityMapAccessor extends IdentityMapAccessor {
         if ((cacheKey != null) && (shouldReturnInvalidatedObjects || !descriptor.getCacheInvalidationPolicy().isInvalidated(cacheKey))) {
             cacheKey.getInstanceLock().lock();
             try {
-                //if the object in the cachekey is null but the key is acquired then
-                //someone must be rebuilding it or creating a new one.  Sleep until
-                // it's finished. A plain wait here would be more efficient but we may not
-                // get notified for quite some time (ie deadlock) if the other thread
-                //is building the object.  Must wait and not sleep in order for the monitor to be released
+                // A key can be acquired before its object is built. Release the state lock
+                // while waiting for another writer to finish constructing the object.
+                // The writer may publish the object before it is complete, so wait for the
+                // release, not for the object. The wait is capped like CacheKey.waitForObject().
                 objectFromCache = cacheKey.getObject();
-                try {
-                    while (cacheKey.isAcquired() && (objectFromCache == null)) {
-                        cacheKey.wait(5);
+                if (objectFromCache == null) {
+                    try {
+                        cacheKey.waitWhileAcquiredByAnotherWriter();
+                        objectFromCache = cacheKey.getObject();
+                    } catch (InterruptedException ex) {
+                        // Return no object, but keep the interrupt visible to the caller.
+                        Thread.currentThread().interrupt();
                     }
-                } catch (InterruptedException ex) {
                 }
             } finally {
                 cacheKey.getInstanceLock().unlock();

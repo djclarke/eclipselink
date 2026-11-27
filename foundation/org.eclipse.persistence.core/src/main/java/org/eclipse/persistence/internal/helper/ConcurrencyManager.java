@@ -658,6 +658,42 @@ public class ConcurrencyManager implements Serializable {
     }
 
     /**
+     * INTERNAL:
+     * Release the deferred lock at the end of a block. If the block failed with
+     * {@code blockFailure}, a failure from the release is added to it as suppressed,
+     * so the block's failure stays the one reported. With no block failure this is
+     * the same as {@link #releaseDeferredLock()}.
+     */
+    public void releaseDeferredLockAfter(Throwable blockFailure) throws ConcurrencyException {
+        if (blockFailure == null) {
+            releaseDeferredLock();
+            return;
+        }
+        try {
+            releaseDeferredLock();
+        } catch (RuntimeException | Error releaseFailure) {
+            blockFailure.addSuppressed(releaseFailure);
+        }
+    }
+
+    /**
+     * INTERNAL:
+     * Release the read lock at the end of a block, keeping the block's failure as the
+     * one reported. See {@link #releaseDeferredLockAfter(Throwable)}.
+     */
+    public void releaseReadLockAfter(Throwable blockFailure) throws ConcurrencyException {
+        if (blockFailure == null) {
+            releaseReadLock();
+            return;
+        }
+        try {
+            releaseReadLock();
+        } catch (RuntimeException | Error releaseFailure) {
+            blockFailure.addSuppressed(releaseFailure);
+        }
+    }
+
+    /**
      * Release the deferred lock.
      * This uses a deadlock detection and resolution algorithm to avoid cache deadlocks.
      * The deferred lock manager keeps track of the lock for a thread, so that other
