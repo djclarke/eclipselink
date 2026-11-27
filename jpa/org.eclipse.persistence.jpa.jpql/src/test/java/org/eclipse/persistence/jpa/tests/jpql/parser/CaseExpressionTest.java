@@ -163,4 +163,73 @@ public final class CaseExpressionTest extends JPQLParserTest {
 
         testQuery(query, selectStatement);
     }
+
+    // Covers https://github.com/eclipse-ee4j/eclipselink/issues/2847
+    @Test
+    public void test_SearchedCaseWhenEntityAliasIsNull() {
+        String query = "SELECT CASE WHEN e IS NULL THEN 0 ELSE 1 END FROM Employee e";
+
+        testQuery(query, selectStatement(
+            select(case_(new ExpressionTester[] {
+                when(isNull(variable("e")), numeric(0))
+            }, numeric(1))),
+            from("Employee", "e")
+        ));
+    }
+
+    // Covers https://github.com/eclipse-ee4j/eclipselink/issues/2847
+    @Test
+    public void test_SearchedCaseWhenJoinAliasIsNull() {
+        String query = "SELECT CASE WHEN f IS NULL THEN 'none' ELSE f.name END FROM Employee e LEFT JOIN e.frequentFlierPlan f";
+
+        testQuery(query, selectStatement(
+            select(case_(new ExpressionTester[] {
+                when(isNull(variable("f")), string("'none'"))
+            }, path("f.name"))),
+            from("Employee", "e", leftJoin("e.frequentFlierPlan", "f"))
+        ));
+    }
+
+    // Covers https://github.com/eclipse-ee4j/eclipselink/issues/2847
+    @Test
+    public void test_SearchedCaseWhenCollectionAliasComparison() {
+        String query = "SELECT CASE WHEN n = 'Unix' THEN 1 ELSE 0 END FROM Employee e JOIN e.nicknames n";
+
+        testQuery(query, selectStatement(
+            select(case_(new ExpressionTester[] {
+                when(variable("n").equal(string("'Unix'")), numeric(1))
+            }, numeric(0))),
+            from("Employee", "e", join("e.nicknames", "n"))
+        ));
+    }
+
+    // Covers https://github.com/eclipse-ee4j/eclipselink/issues/2847
+    @Test
+    public void test_SearchedCaseWhenAliasInWhereClause() {
+        String query = "SELECT e FROM Employee e JOIN e.phones p WHERE CASE WHEN p = 'Unix' THEN 1 WHEN e IS NULL THEN 2 ELSE 0 END = 1";
+
+        testQuery(query, selectStatement(
+            select(variable("e")),
+            from("Employee", "e", join("e.phones", "p")),
+            where(case_(new ExpressionTester[] {
+                when(variable("p").equal(string("'Unix'")), numeric(1)),
+                when(isNull(variable("e")), numeric(2))
+            }, numeric(0)).equal(numeric(1)))
+        ));
+    }
+
+    // Simple CASE: a bare identifier after WHEN is still an entity type literal
+    @Test
+    public void test_SimpleCaseWhenEntityTypeLiteral() {
+        String query = "SELECT CASE TYPE(e) WHEN Exempt THEN 1 ELSE CASE WHEN e IS NULL THEN 2 ELSE 3 END END FROM Employee e";
+
+        testQuery(query, selectStatement(
+            select(case_(type("e"), new ExpressionTester[] {
+                when(entity("Exempt"), numeric(1))
+            }, case_(new ExpressionTester[] {
+                when(isNull(variable("e")), numeric(2))
+            }, numeric(3)))),
+            from("Employee", "e")
+        ));
+    }
 }
