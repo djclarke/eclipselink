@@ -17,6 +17,11 @@
 package org.eclipse.persistence.jpa.tests.jpql.parser;
 
 import static org.eclipse.persistence.jpa.tests.jpql.parser.JPQLParserTester.and;
+import static org.eclipse.persistence.jpa.tests.jpql.parser.JPQLParserTester.case_;
+import static org.eclipse.persistence.jpa.tests.jpql.parser.JPQLParserTester.delete;
+import static org.eclipse.persistence.jpa.tests.jpql.parser.JPQLParserTester.deleteStatement;
+import static org.eclipse.persistence.jpa.tests.jpql.parser.JPQLParserTester.string;
+import static org.eclipse.persistence.jpa.tests.jpql.parser.JPQLParserTester.when;
 import static org.eclipse.persistence.jpa.tests.jpql.parser.JPQLParserTester.avg;
 import static org.eclipse.persistence.jpa.tests.jpql.parser.JPQLParserTester.division;
 import static org.eclipse.persistence.jpa.tests.jpql.parser.JPQLParserTester.equal;
@@ -331,6 +336,67 @@ public final class JPQLExpressionTestJakartaData extends JPQLParserTest {
         );
 
         testJakartaDataQuery(inputJPQLQuery, selectStatement);
+    }
+
+    // Covers https://github.com/eclipse-ee4j/eclipselink/issues/2847
+    @Test
+    public void testSelectImplicitStateFieldInSearchedCase() {
+
+        String inputJPQLQuery = "SELECT this FROM Todo WHERE CASE WHEN id = 1 THEN 'x' ELSE 'y' END = 'x'";
+
+        SelectStatementTester selectStatement = selectStatement(
+                select(variable("this")),
+                from("Todo", "{this}"),
+                where(equal(
+                        case_(new ExpressionTester[] {
+                                when(equal(virtualVariable("this", "id"), numeric(1)), string("'x'"))
+                        }, string("'y'")),
+                        string("'x'")
+                ))
+        );
+
+        testJakartaDataQuery(inputJPQLQuery, selectStatement);
+    }
+
+    // Covers https://github.com/eclipse-ee4j/eclipselink/issues/2847
+    @Test
+    public void testUpdateImplicitStateFieldInSearchedCase() {
+
+        String inputJPQLQuery = "UPDATE Todo SET title = CASE WHEN id = 1 THEN 'x' ELSE 'y' END";
+
+        UpdateStatementTester updateStatement = updateStatement(
+                update(
+                        "Todo", "this",
+                        set(path("{this}.title"),
+                                case_(new ExpressionTester[] {
+                                        when(equal(virtualVariable("this", "id"), numeric(1)), string("'x'"))
+                                }, string("'y'"))
+                        ), false)
+        );
+
+        testJakartaDataQuery(inputJPQLQuery, updateStatement);
+    }
+
+    // Covers https://github.com/eclipse-ee4j/eclipselink/issues/2847
+    @Test
+    public void testDeleteImplicitStateFieldInSearchedCase() {
+
+        String inputJPQLQuery = "DELETE FROM Todo WHERE CASE WHEN id = 1 THEN 'x' ELSE 'y' END = 'x'";
+
+        DeleteStatementTester deleteStatement = deleteStatement(
+                delete("Todo", "{this}"),
+                where(equal(
+                        case_(new ExpressionTester[] {
+                                when(equal(virtualVariable("this", "id"), numeric(1)), string("'x'"))
+                        }, string("'y'")),
+                        string("'x'")
+                ))
+        );
+
+        // With the virtual "this" variable, the space before WHERE belongs to the range variable declaration
+        deleteStatement.hasSpaceAfterDeleteClause = false;
+
+        testJakartaDataQuery(inputJPQLQuery, deleteStatement);
     }
 
     private void checkAliasFrom(JPQLExpression jpqlExpression, String expectedAlias) {
