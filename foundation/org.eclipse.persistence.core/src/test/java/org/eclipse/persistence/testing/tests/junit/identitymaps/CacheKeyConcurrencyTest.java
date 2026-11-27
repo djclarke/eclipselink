@@ -402,6 +402,7 @@ public class CacheKeyConcurrencyTest {
 
     static class ProbeCacheKey extends CacheKey {
         volatile Runnable beforeDeferredAcquire;
+        volatile Runnable afterDeferredAcquire;
         volatile RuntimeException failureAfterDeferredAcquire;
         volatile RuntimeException failureAfterReadAcquire;
         volatile RuntimeException failureDuringObjectWait;
@@ -429,6 +430,9 @@ public class CacheKeyConcurrencyTest {
                 beforeDeferredAcquire.run();
             }
             super.acquireDeferredLock();
+            if (afterDeferredAcquire != null) {
+                afterDeferredAcquire.run();
+            }
             if (failureAfterDeferredAcquire != null) {
                 failingThread = Thread.currentThread();
             }

@@ -39,6 +39,36 @@ public class SessionMergeLockRaceTest {
         releasesKeyBetweenReadAndDeferredAcquisition(Route.SESSION_WAITLOOP);
     }
 
+    @Test
+    public void changeSetReturnsAtOnceWhenTheOtherOwnerReleasesAnEmptyKey() throws Exception {
+        try (Fixture fixture = new Fixture(Route.CHANGE_SET)) {
+            CountDownLatch deferred = new CountDownLatch(1);
+            CountDownLatch ownerReleased = new CountDownLatch(1);
+            // The reader records a deferred lock while the test thread still owns the empty key,
+            // then the owner releases it without publishing before the reader checks the key.
+            fixture.referenceKey.afterDeferredAcquire = () -> {
+                deferred.countDown();
+                try {
+                    assertTrue(ownerReleased.await(10, TimeUnit.SECONDS));
+                } catch (InterruptedException e) {
+                    throw new AssertionError(e);
+                }
+            };
+            Future<Object> read = fixture.start();
+            try {
+                assertTrue(deferred.await(10, TimeUnit.SECONDS));
+                assertSame(Thread.currentThread(), fixture.referenceKey.getActiveThread());
+                fixture.finishConstruction(false);
+                ownerReleased.countDown();
+                // Without the early exit the merge would retry for ObjectChangeSet.MAX_TRIES x 10 ms.
+                assertNull(read.get(10, TimeUnit.SECONDS));
+                fixture.assertReleased();
+            } finally {
+                ownerReleased.countDown();
+            }
+        }
+    }
+
     private void releasesKeyBetweenReadAndDeferredAcquisition(Route route) throws Exception {
         try (Fixture fixture = new Fixture(route)) {
             CountDownLatch beforeAcquire = new CountDownLatch(1);

@@ -550,6 +550,9 @@ public class ObjectChangeSet implements Serializable, Comparable<ObjectChangeSet
                         }
                         cacheKey.getInstanceLock().lock();
                         try {
+                            // Nobody else is building the object: the key is free (its writer released it,
+                            // possibly without publishing after a failed construction) or this thread now
+                            // owns it. Waiting cannot produce an object, so merge with what the key holds.
                             if (!cacheKey.isAcquiredForWritingAndOwnedByDifferentThread()) {
                                 domainObject = cacheKey.getObject();
                                 break;
