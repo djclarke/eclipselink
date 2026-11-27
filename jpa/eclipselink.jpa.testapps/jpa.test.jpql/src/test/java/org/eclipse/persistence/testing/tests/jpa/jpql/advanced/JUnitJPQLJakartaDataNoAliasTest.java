@@ -126,6 +126,9 @@ public class JUnitJPQLJakartaDataNoAliasTest extends JUnitTestCase {
         suite.addTest(new JUnitJPQLJakartaDataNoAliasTest("testThisVariableInPathAndIdFunctionExpressionUpdate"));
         suite.addTest(new JUnitJPQLJakartaDataNoAliasTest("testThisVariableInPathExpressionDelete"));
         suite.addTest(new JUnitJPQLJakartaDataNoAliasTest("testThisVariableInLikeExpressionDelete"));
+        suite.addTest(new JUnitJPQLJakartaDataNoAliasTest("testSelectImplicitStateFieldInSearchedCase"));
+        suite.addTest(new JUnitJPQLJakartaDataNoAliasTest("testUpdateImplicitStateFieldInSearchedCase"));
+        suite.addTest(new JUnitJPQLJakartaDataNoAliasTest("testDeleteImplicitStateFieldInSearchedCase"));
         return suite;
     }
 
@@ -532,6 +535,34 @@ public class JUnitJPQLJakartaDataNoAliasTest extends JUnitTestCase {
         }
     }
 
+    // Covers https://github.com/eclipse-ee4j/eclipselink/issues/2847
+    public void testSelectImplicitStateFieldInSearchedCase() {
+        resetRooms(false);
+        List<Room> rooms = getEntityManagerFactory().callInTransaction(em -> em.createQuery(
+                "SELECT this FROM Room WHERE CASE WHEN id = 1 THEN 'x' ELSE 'y' END = 'x'", Room.class).getResultList());
+        assertEquals("Number of rooms with ID = 1", 1, rooms.size());
+        assertEquals("Room ID", 1, rooms.get(0).getId());
+    }
+
+    // Covers https://github.com/eclipse-ee4j/eclipselink/issues/2847
+    public void testUpdateImplicitStateFieldInSearchedCase() {
+        resetRooms(false);
+        int numberOfChanges = getEntityManagerFactory().callInTransaction(em -> em.createQuery(
+                "UPDATE Room SET length = CASE WHEN id = 1 THEN 10 ELSE length END").executeUpdate());
+        assertEquals("Number of rooms updated", ROOMS_COUNT, numberOfChanges);
+        assertEquals("Length of room with ID = 1", 10, findRoomById(1).getLength());
+        assertEquals("Length of room with ID = 2", 1, findRoomById(2).getLength());
+    }
+
+    // Covers https://github.com/eclipse-ee4j/eclipselink/issues/2847
+    public void testDeleteImplicitStateFieldInSearchedCase() {
+        resetRooms(true);
+        int numberOfChanges = getEntityManagerFactory().callInTransaction(em -> em.createQuery(
+                "DELETE FROM Room WHERE CASE WHEN id = 1 THEN 'x' ELSE 'y' END = 'x'").executeUpdate());
+        assertEquals("Number of rooms with ID = 1 deleted", 1, numberOfChanges);
+        assertEquals("Number of remaining rooms", ROOMS_COUNT - 1, getAllRooms().count());
+    }
+
     private Stream<Room> getAllRooms() {
         return getEntityManagerFactory().callInTransaction(em -> em.createQuery(
                 "SELECT r FROM Room r", Room.class).getResultStream());
@@ -539,7 +570,7 @@ public class JUnitJPQLJakartaDataNoAliasTest extends JUnitTestCase {
 
     private Room findRoomById(int i) {
         return getEntityManagerFactory().callInTransaction(em -> {
-            return em.find(Room.class, 1);
+            return em.find(Room.class, i);
         });
     }
 
