@@ -17,6 +17,7 @@ package org.eclipse.persistence.jpa.jpql.tools.model.query;
 
 import java.io.IOException;
 import java.util.List;
+import org.eclipse.persistence.jpa.jpql.parser.ConditionalExpressionBNF;
 import org.eclipse.persistence.jpa.jpql.parser.InternalWhenClauseBNF;
 import org.eclipse.persistence.jpa.jpql.parser.ScalarExpressionBNF;
 import org.eclipse.persistence.jpa.jpql.parser.WhenClause;
@@ -192,7 +193,13 @@ public class WhenClauseStateObject extends AbstractConditionalClauseStateObject 
      * parse and to convert into a {@link StateObject}
      */
     public void parseWhen(String jpqlFragment) {
-        StateObject stateObject = buildStateObject(jpqlFragment, InternalWhenClauseBNF.ID);
+        StateObject parent = getParent();
+        // A searched CASE (no case operand) takes a conditional expression after WHEN, where a
+        // bare identifier is a path, not an entity type literal (see WhenClause)
+        String queryBNFId = (parent instanceof CaseExpressionStateObject) &&
+                            !((CaseExpressionStateObject) parent).hasCaseOperand() ?
+                            ConditionalExpressionBNF.ID : InternalWhenClauseBNF.ID;
+        StateObject stateObject = buildStateObject(jpqlFragment, queryBNFId);
         setConditional(stateObject);
     }
 
