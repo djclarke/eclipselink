@@ -2873,12 +2873,21 @@ public abstract class AbstractSession extends CoreAbstractSession<ClassDescripto
                        case MergeManagerOperationMode.ORIGIN -> {
                            original = cacheKey.getObject();
                            if (original == null) {
+                               final Thread currentThread = Thread.currentThread();
+                               final long whileStartTimeMillis = System.currentTimeMillis();
+                               final DeferredLockManager lockManager = ConcurrencyManager.getDeferredLockManager(currentThread);
+                               final ReadLockManager readLockManager = ConcurrencyManager.getReadLockManager(currentThread);
                                cacheKey.getInstanceLock().lock();
                                try {
                                    // Deferred acquisition may now own an empty key after a failed construction.
+                                   // ORIGIN waits for as long as the writer holds the key (WAITLOOP is the bounded
+                                   // mode), but polls instead of relying on a signal: an isolated CacheKey.release()
+                                   // does not signal the condition. Report a wait that looks stuck in the usual way.
                                    while (cacheKey.isAcquiredForWritingAndOwnedByDifferentThread() && cacheKey.getObject() == null) {
                                        try {
-                                           cacheKey.getInstanceLockCondition().await();
+                                           cacheKey.getInstanceLockCondition().await(10, TimeUnit.MILLISECONDS);
+                                           ConcurrencyUtil.SINGLETON.determineIfReleaseDeferredLockAppearsToBeDeadLocked(cacheKey, whileStartTimeMillis,
+                                                   lockManager, readLockManager, false);
                                        } catch (InterruptedException e) {
                                            // Stop waiting and return what the cache holds.
                                            interrupted = true;

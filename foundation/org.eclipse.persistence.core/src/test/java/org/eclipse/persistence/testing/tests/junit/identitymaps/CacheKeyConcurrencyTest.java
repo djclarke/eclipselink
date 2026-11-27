@@ -152,6 +152,19 @@ public class CacheKeyConcurrencyTest {
         }
     }
 
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = Route.class, names = {"SESSION_ORIGIN"})
+    public void originMergeNoticesAReleaseThatIsNotSignalled(Route route) throws Exception {
+        try (Fixture fixture = new Fixture(route)) {
+            Future<Object> read = fixture.start();
+            fixture.awaitWaitingOrCompletion();
+            // An isolated CacheKey.release() only lowers the depth; it never signals waiters.
+            fixture.referenceKey.publishAndReleaseWithoutSignal(fixture.reference);
+            fixture.assertResult(read.get(10, TimeUnit.SECONDS));
+            fixture.assertReleased();
+        }
+    }
+
     static final class Fixture implements AutoCloseable {
         final Route route;
         final TestSession session = new TestSession();
@@ -429,6 +442,18 @@ public class CacheKeyConcurrencyTest {
                 failingThread = Thread.currentThread();
             }
             return acquired;
+        }
+
+        /** Release the writer's hold the way an isolated key does: no signal to waiting readers. */
+        void publishAndReleaseWithoutSignal(Object published) {
+            getInstanceLock().lock();
+            try {
+                setObject(published);
+                depth.set(0);
+                setActiveThread(null);
+            } finally {
+                getInstanceLock().unlock();
+            }
         }
 
         @Override
