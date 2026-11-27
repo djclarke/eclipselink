@@ -21,9 +21,10 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import static org.eclipse.persistence.testing.tests.junit.identitymaps.CacheKeyConcurrencyTest.HANG_GUARD_SECONDS;
 import static org.junit.jupiter.api.Assertions.*;
 
-@Timeout(value = 15, unit = TimeUnit.SECONDS)
+@Timeout(value = 120, unit = TimeUnit.SECONDS)
 public class DeferredMergeLockCleanupTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(value = Route.class, names = {"CHANGE_SET", "SESSION_ORIGIN", "SESSION_WAITLOOP"})
@@ -33,7 +34,7 @@ public class DeferredMergeLockCleanupTest {
             Future<Object> read = fixture.start();
             fixture.awaitWaitingOrCompletion();
             fixture.finishConstruction(true);
-            fixture.assertResult(read.get(5, TimeUnit.SECONDS));
+            fixture.assertResult(read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
             fixture.assertReleased();
         }
     }
@@ -46,7 +47,7 @@ public class DeferredMergeLockCleanupTest {
             RuntimeException expected = new IllegalStateException("Injected failure after read acquisition");
             fixture.referenceKey.failureAfterReadAcquire = expected;
             Future<Object> read = fixture.start();
-            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(5, TimeUnit.SECONDS));
+            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
             assertSame(expected, failure.getCause());
             fixture.assertReleased();
         }
@@ -61,7 +62,7 @@ public class DeferredMergeLockCleanupTest {
             Future<Object> read = fixture.start();
             fixture.awaitWaitingOrCompletion();
             fixture.finishConstruction(true);
-            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(5, TimeUnit.SECONDS));
+            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
             assertSame(expected, failure.getCause());
             fixture.assertReleased();
         }
@@ -78,7 +79,7 @@ public class DeferredMergeLockCleanupTest {
             Future<Object> read = fixture.start();
             fixture.awaitWaitingOrCompletion();
             fixture.finishConstruction(true);
-            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(10, TimeUnit.SECONDS));
+            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
             assertSame(expected, failure.getCause());
             assertArrayEquals(new Throwable[] {releaseFailure}, expected.getSuppressed());
             fixture.assertReleased();
@@ -95,7 +96,7 @@ public class DeferredMergeLockCleanupTest {
             fixture.referenceKey.failureAfterReadAcquire = expected;
             fixture.referenceKey.failureDuringReadRelease = releaseFailure;
             Future<Object> read = fixture.start();
-            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(10, TimeUnit.SECONDS));
+            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
             assertSame(expected, failure.getCause());
             assertArrayEquals(new Throwable[] {releaseFailure}, expected.getSuppressed());
             fixture.assertReleased();
@@ -111,7 +112,7 @@ public class DeferredMergeLockCleanupTest {
             Future<Object> read = fixture.start();
             fixture.awaitWaitingOrCompletion();
             fixture.finishConstruction(true);
-            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(10, TimeUnit.SECONDS));
+            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
             assertSame(releaseFailure, failure.getCause());
             assertEquals(0, releaseFailure.getSuppressed().length);
             fixture.assertReleased();

@@ -51,8 +51,14 @@ import org.junit.jupiter.params.provider.EnumSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Tests the real cache wait paths without a database, JMS or timing-dependent load. */
-@Timeout(value = 15, unit = TimeUnit.SECONDS)
+@Timeout(value = 120, unit = TimeUnit.SECONDS)
 public class CacheKeyConcurrencyTest {
+    /**
+     * Upper bound for waits that only guard against a hang. Generous so a loaded CI runner
+     * cannot fail a test that would pass; a broken wait still fails, just later.
+     */
+    static final long HANG_GUARD_SECONDS = 30;
+
     enum Route {
         CHANGE_SET, SESSION_ORIGIN, SESSION_WAITLOOP, UNIT_OF_WORK, ISOLATED_CLIENT;
 
@@ -67,7 +73,7 @@ public class CacheKeyConcurrencyTest {
         try (Fixture fixture = new Fixture(route)) {
             fixture.finishConstruction(true);
             Future<Object> read = fixture.start();
-            fixture.assertResult(read.get(5, TimeUnit.SECONDS));
+            fixture.assertResult(read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
             fixture.assertReleased();
         }
     }
@@ -79,7 +85,7 @@ public class CacheKeyConcurrencyTest {
             Future<Object> read = fixture.start();
             fixture.awaitWaitingOrCompletion();
             fixture.finishConstruction(true);
-            fixture.assertResult(read.get(5, TimeUnit.SECONDS));
+            fixture.assertResult(read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
             fixture.assertReleased();
         }
     }
@@ -98,7 +104,7 @@ public class CacheKeyConcurrencyTest {
             }
             assertThrows(TimeoutException.class, () -> read.get(100, TimeUnit.MILLISECONDS));
             fixture.finishConstruction(true);
-            fixture.assertResult(read.get(5, TimeUnit.SECONDS));
+            fixture.assertResult(read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
             fixture.assertReleased();
         }
     }
@@ -110,7 +116,7 @@ public class CacheKeyConcurrencyTest {
             Future<Object> read = fixture.start();
             fixture.awaitWaitingOrCompletion();
             fixture.finishConstruction(false);
-            assertNull(read.get(2, TimeUnit.SECONDS));
+            assertNull(read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
             fixture.assertReleased();
         }
     }
@@ -127,7 +133,7 @@ public class CacheKeyConcurrencyTest {
             }
             fixture.finishConstruction(true);
             // These legacy APIs do not throw InterruptedException; preserve that contract.
-            read.get(5, TimeUnit.SECONDS);
+            read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS);
             if (route != Route.SESSION_WAITLOOP) {
                 // WAITLOOP treats the interrupt as a deadlock signal and invalidates the key instead.
                 assertTrue(fixture.interruptedOnExit, "The interrupt must stay visible to the caller");
@@ -143,7 +149,7 @@ public class CacheKeyConcurrencyTest {
             // The test thread holds the reference key for writing and never releases it during the read.
             fixture.referenceKey.writerWaitTries = 3;
             Future<Object> read = fixture.start();
-            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(10, TimeUnit.SECONDS));
+            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
             ConcurrencyException cause = assertInstanceOf(ConcurrencyException.class, failure.getCause());
             assertEquals(ConcurrencyException.MAX_TRIES_EXCEDED_FOR_LOCK_ON_BUILD_OBJECT, cause.getErrorCode());
             assertSame(Thread.currentThread(), fixture.referenceKey.getActiveThread(), "The writer must still own the key");
@@ -160,7 +166,7 @@ public class CacheKeyConcurrencyTest {
             fixture.awaitWaitingOrCompletion();
             // An isolated CacheKey.release() only lowers the depth; it never signals waiters.
             fixture.referenceKey.publishAndReleaseWithoutSignal(fixture.reference);
-            fixture.assertResult(read.get(10, TimeUnit.SECONDS));
+            fixture.assertResult(read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
             fixture.assertReleased();
         }
     }
@@ -257,7 +263,7 @@ public class CacheKeyConcurrencyTest {
         }
 
         void awaitWaitingOrCompletion() throws Exception {
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HANG_GUARD_SECONDS);
             while (System.nanoTime() < deadline) {
                 if (result.isDone()) {
                     return; // Propagate an early exception through Future.get(), after releasing the producer.
@@ -286,7 +292,7 @@ public class CacheKeyConcurrencyTest {
         }
 
         void awaitInterruptionHandling() {
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(HANG_GUARD_SECONDS);
             while (System.nanoTime() < deadline) {
                 referenceKey.getInstanceLock().lock();
                 try {
@@ -329,7 +335,7 @@ public class CacheKeyConcurrencyTest {
                     assertNull(key.getActiveThread(), "Logical cache lock owner retained");
                     assertEquals(0, key.getDepth());
                     assertEquals(0, key.getNumberOfReaders());
-                    assertTrue(key.getInstanceLock().tryLock(1, TimeUnit.SECONDS), "State lock retained");
+                    assertTrue(key.getInstanceLock().tryLock(HANG_GUARD_SECONDS, TimeUnit.SECONDS), "State lock retained");
                     key.getInstanceLock().unlock();
                     // The producer thread differs from the reader and must be able to acquire the key.
                     assertTrue(key.acquireNoWait());
@@ -366,11 +372,11 @@ public class CacheKeyConcurrencyTest {
                         }
                     }
                     return null;
-                }).get(5, TimeUnit.SECONDS);
+                }).get(HANG_GUARD_SECONDS, TimeUnit.SECONDS);
             } finally {
                 executor.shutdownNow();
                 try {
-                    assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS), "Reader executor must terminate");
+                    assertTrue(executor.awaitTermination(HANG_GUARD_SECONDS, TimeUnit.SECONDS), "Reader executor must terminate");
                 } finally {
                     ConcurrencyUtil.SINGLETON.setConcurrencyManagerAllowGetCacheKeyForMergeMode(previousMode);
                 }

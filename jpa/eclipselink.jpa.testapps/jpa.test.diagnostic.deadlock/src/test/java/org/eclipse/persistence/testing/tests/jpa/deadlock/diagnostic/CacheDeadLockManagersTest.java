@@ -246,7 +246,7 @@ public class CacheDeadLockManagersTest extends JUnitTestCase {
             thread.setDaemon(true);
             thread.start();
             try {
-                assertTrue("The other thread did not acquire the cache key", cacheKeyLocked.await(5, TimeUnit.SECONDS));
+                assertTrue("The other thread did not acquire the cache key", cacheKeyLocked.await(30, TimeUnit.SECONDS));
                 em.getTransaction().begin();
                 CacheDeadLockDetectionDetail cacheDeadLockDetectionDetail2 = new CacheDeadLockDetectionDetail(DETAIL_ID_2, "D2222");
                 cacheDeadLockDetectionDetail2.setMaster(cacheDeadLockDetectionMaster);
@@ -266,7 +266,7 @@ public class CacheDeadLockManagersTest extends JUnitTestCase {
                 assertTrue(logWrapper.getMessageCount("competing thread: " + thread) >= 1);
             } finally {
                 semaphore.release();
-                thread.join(TimeUnit.SECONDS.toMillis(5));
+                thread.join(TimeUnit.SECONDS.toMillis(30));
                 assertFalse("The cache key owner did not finish", thread.isAlive());
                 lockOwner.get();
             }

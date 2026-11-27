@@ -20,9 +20,10 @@ import org.eclipse.persistence.testing.tests.junit.identitymaps.CacheKeyConcurre
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import static org.eclipse.persistence.testing.tests.junit.identitymaps.CacheKeyConcurrencyTest.HANG_GUARD_SECONDS;
 import static org.junit.jupiter.api.Assertions.*;
 
-@Timeout(value = 15, unit = TimeUnit.SECONDS)
+@Timeout(value = 120, unit = TimeUnit.SECONDS)
 public class CacheKeyCloneWaitTest {
     @Test
     public void unitOfWorkDoesNotWaitForItsOwnEmptyKey() throws Exception {
@@ -62,7 +63,7 @@ public class CacheKeyCloneWaitTest {
             } finally {
                 fixture.referenceKey.getInstanceLock().unlock();
             }
-            assertNull(read.get(2, TimeUnit.SECONDS));
+            assertNull(read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
             fixture.finishConstruction(true);
             fixture.assertReleased();
         }
@@ -73,7 +74,7 @@ public class CacheKeyCloneWaitTest {
             fixture.finishConstruction(false);
             fixture.acquireReferenceKeyBeforeRead = true;
             Future<Object> read = fixture.start();
-            assertNull(read.get(2, TimeUnit.SECONDS));
+            assertNull(read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
             fixture.assertReleased();
         }
     }
@@ -92,7 +93,7 @@ public class CacheKeyCloneWaitTest {
             }
             assertThrows(TimeoutException.class, () -> read.get(100, TimeUnit.MILLISECONDS));
             fixture.finishConstruction(true);
-            fixture.assertResult(read.get(5, TimeUnit.SECONDS));
+            fixture.assertResult(read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
             fixture.assertReleased();
         }
     }

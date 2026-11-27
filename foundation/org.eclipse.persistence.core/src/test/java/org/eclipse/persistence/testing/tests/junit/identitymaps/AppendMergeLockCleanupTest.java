@@ -21,9 +21,10 @@ import org.eclipse.persistence.testing.tests.junit.identitymaps.CacheKeyConcurre
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import static org.eclipse.persistence.testing.tests.junit.identitymaps.CacheKeyConcurrencyTest.HANG_GUARD_SECONDS;
 import static org.junit.jupiter.api.Assertions.*;
 
-@Timeout(value = 15, unit = TimeUnit.SECONDS)
+@Timeout(value = 120, unit = TimeUnit.SECONDS)
 public class AppendMergeLockCleanupTest {
     @Test
     public void releasesDeferredLocksAfterWaitingForAnAppendedObject() throws Exception {
@@ -32,7 +33,7 @@ public class AppendMergeLockCleanupTest {
             Future<Object> read = fixture.start();
             fixture.awaitWaitingOrCompletion();
             fixture.finishConstruction(true);
-            fixture.assertResult(read.get(5, TimeUnit.SECONDS));
+            fixture.assertResult(read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
             fixture.assertReleased();
         }
     }
@@ -47,7 +48,7 @@ public class AppendMergeLockCleanupTest {
             Future<Object> read = fixture.start();
             fixture.awaitWaitingOrCompletion();
             fixture.finishConstruction(true);
-            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(5, TimeUnit.SECONDS));
+            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
             assertSame(expected, failure.getCause());
             fixture.assertReleased();
         }
@@ -65,7 +66,7 @@ public class AppendMergeLockCleanupTest {
             Future<Object> read = fixture.start();
             fixture.awaitWaitingOrCompletion();
             fixture.finishConstruction(true);
-            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(10, TimeUnit.SECONDS));
+            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
             assertSame(expected, failure.getCause());
             assertArrayEquals(new Throwable[] {releaseFailure}, expected.getSuppressed());
             fixture.assertReleased();

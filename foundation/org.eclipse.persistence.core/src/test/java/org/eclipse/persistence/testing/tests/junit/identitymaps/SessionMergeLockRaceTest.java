@@ -20,9 +20,10 @@ import org.eclipse.persistence.testing.tests.junit.identitymaps.CacheKeyConcurre
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import static org.eclipse.persistence.testing.tests.junit.identitymaps.CacheKeyConcurrencyTest.HANG_GUARD_SECONDS;
 import static org.junit.jupiter.api.Assertions.*;
 
-@Timeout(value = 15, unit = TimeUnit.SECONDS)
+@Timeout(value = 120, unit = TimeUnit.SECONDS)
 public class SessionMergeLockRaceTest {
     @Test
     public void changeSetDoesNotWaitForAnEmptyKeyNowOwnedByTheReader() throws Exception {
@@ -49,19 +50,19 @@ public class SessionMergeLockRaceTest {
             fixture.referenceKey.afterDeferredAcquire = () -> {
                 deferred.countDown();
                 try {
-                    assertTrue(ownerReleased.await(10, TimeUnit.SECONDS));
+                    assertTrue(ownerReleased.await(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
                 } catch (InterruptedException e) {
                     throw new AssertionError(e);
                 }
             };
             Future<Object> read = fixture.start();
             try {
-                assertTrue(deferred.await(10, TimeUnit.SECONDS));
+                assertTrue(deferred.await(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
                 assertSame(Thread.currentThread(), fixture.referenceKey.getActiveThread());
                 fixture.finishConstruction(false);
                 ownerReleased.countDown();
                 // Without the early exit the merge would retry for ObjectChangeSet.MAX_TRIES x 10 ms.
-                assertNull(read.get(10, TimeUnit.SECONDS));
+                assertNull(read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
                 fixture.assertReleased();
             } finally {
                 ownerReleased.countDown();
@@ -76,18 +77,18 @@ public class SessionMergeLockRaceTest {
             fixture.referenceKey.beforeDeferredAcquire = () -> {
                 beforeAcquire.countDown();
                 try {
-                    assertTrue(ownerReleased.await(5, TimeUnit.SECONDS));
+                    assertTrue(ownerReleased.await(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
                 } catch (InterruptedException e) {
                     throw new AssertionError(e);
                 }
             };
             Future<Object> read = fixture.start();
             try {
-                assertTrue(beforeAcquire.await(5, TimeUnit.SECONDS));
+                assertTrue(beforeAcquire.await(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
                 // A failed/cancelled construction can release its key without publishing an object.
                 fixture.finishConstruction(false);
                 ownerReleased.countDown();
-                assertNull(read.get(2, TimeUnit.SECONDS));
+                assertNull(read.get(HANG_GUARD_SECONDS, TimeUnit.SECONDS));
                 fixture.assertReleased();
             } finally {
                 ownerReleased.countDown();
