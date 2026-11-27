@@ -13,6 +13,7 @@ package org.eclipse.persistence.testing.tests.junit.identitymaps;
 
 import java.util.Collections;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -25,6 +26,7 @@ import org.eclipse.persistence.annotations.CacheIsolationType;
 import org.eclipse.persistence.config.MergeManagerOperationMode;
 import org.eclipse.persistence.config.ReferenceMode;
 import org.eclipse.persistence.descriptors.ClassDescriptor;
+import org.eclipse.persistence.exceptions.ConcurrencyException;
 import org.eclipse.persistence.internal.helper.ConcurrencyManager;
 import org.eclipse.persistence.internal.helper.ConcurrencyUtil;
 import org.eclipse.persistence.internal.helper.DeferredLockManager;
@@ -126,6 +128,22 @@ public class CacheKeyConcurrencyTest {
             fixture.finishConstruction(true);
             // These legacy APIs swallow InterruptedException; preserve that contract.
             read.get(5, TimeUnit.SECONDS);
+            fixture.assertReleased();
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = Route.class, names = {"UNIT_OF_WORK", "ISOLATED_CLIENT"})
+    public void cloneReadGivesUpWhenTheWriterHoldsTheKeyPastTheCap(Route route) throws Exception {
+        try (Fixture fixture = new Fixture(route)) {
+            // The test thread holds the reference key for writing and never releases it during the read.
+            fixture.referenceKey.writerWaitTries = 3;
+            Future<Object> read = fixture.start();
+            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(10, TimeUnit.SECONDS));
+            ConcurrencyException cause = assertInstanceOf(ConcurrencyException.class, failure.getCause());
+            assertEquals(ConcurrencyException.MAX_TRIES_EXCEDED_FOR_LOCK_ON_BUILD_OBJECT, cause.getErrorCode());
+            assertSame(Thread.currentThread(), fixture.referenceKey.getActiveThread(), "The writer must still own the key");
+            fixture.finishConstruction(true);
             fixture.assertReleased();
         }
     }
@@ -369,10 +387,17 @@ public class CacheKeyConcurrencyTest {
         volatile RuntimeException failureAfterReadAcquire;
         volatile RuntimeException failureDuringObjectWait;
         volatile boolean deferredAcquired;
+        /** Retry cap used by clone reads; lowered by tests that hold the key past it. */
+        volatile int writerWaitTries = MAX_WAIT_TRIES;
         private Thread failingThread;
 
         ProbeCacheKey(Object key, Object object, Object version, long readTime, boolean isolated) {
             super(key, object, version, readTime, isolated);
+        }
+
+        @Override
+        public void waitWhileAcquiredByAnotherWriter() throws InterruptedException {
+            super.waitWhileAcquiredByAnotherWriter(writerWaitTries);
         }
 
         @Override

@@ -33,7 +33,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Vector;
-import java.util.concurrent.TimeUnit;
 
 /**
  * INTERNAL:
@@ -274,12 +273,12 @@ public class IsolatedClientSessionIdentityMapAccessor extends org.eclipse.persis
             try {
                 // A key can be acquired before its object is built. Release the state lock
                 // while waiting for another writer to finish constructing the object.
+                // The writer may publish the object before it is complete, so wait for the
+                // release, not for the object. The wait is capped like CacheKey.waitForObject().
                 objectFromCache = cacheKey.getObject();
                 if (objectFromCache == null) {
                     try {
-                        while (cacheKey.isAcquiredForWritingAndOwnedByDifferentThread()) {
-                            cacheKey.getInstanceLockCondition().await(5, TimeUnit.MILLISECONDS);
-                        }
+                        cacheKey.waitWhileAcquiredByAnotherWriter();
                         objectFromCache = cacheKey.getObject();
                     } catch (InterruptedException ex) {
                     }
