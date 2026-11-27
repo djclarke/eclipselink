@@ -2850,10 +2850,14 @@ public abstract class AbstractSession extends CoreAbstractSession<ClassDescripto
        cacheKey = getIdentityMapAccessorInstance().getCacheKeyForObject(primaryKey, implementation.getClass(), descriptor, true);
        if (cacheKey != null) {
            if (cacheKey.acquireReadLockNoWait()) {
+               Throwable failure = null;
                try {
                    original = cacheKey.getObject();
+               } catch (RuntimeException | Error e) {
+                   failure = e;
+                   throw e;
                } finally {
-                   cacheKey.releaseReadLock();
+                   cacheKey.releaseReadLockAfter(failure);
                }
            } else {
                if (!mergeManager.isTransitionedToDeferredLocks()) {
@@ -2863,6 +2867,7 @@ public abstract class AbstractSession extends CoreAbstractSession<ClassDescripto
                // Restored only after the deferred lock is released: releaseDeferredLock() may sleep
                // while other threads finish building, and a pending interrupt would make it fail.
                boolean interrupted = false;
+               Throwable failure = null;
                try {
                    switch (ConcurrencyUtil.SINGLETON.getConcurrencyManagerAllowGetCacheKeyForMergeMode()) {
                        case MergeManagerOperationMode.ORIGIN -> {
@@ -2933,8 +2938,11 @@ public abstract class AbstractSession extends CoreAbstractSession<ClassDescripto
                            }
                        }
                    }
+               } catch (RuntimeException | Error e) {
+                   failure = e;
+                   throw e;
                } finally {
-                   cacheKey.releaseDeferredLock();
+                   cacheKey.releaseDeferredLockAfter(failure);
                }
                if (interrupted) {
                    Thread.currentThread().interrupt();

@@ -66,4 +66,55 @@ public class DeferredMergeLockCleanupTest {
             fixture.assertReleased();
         }
     }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = Route.class, names = {"CHANGE_SET", "SESSION_ORIGIN", "SESSION_WAITLOOP"})
+    public void keepsTheOriginalExceptionWhenTheDeferredReleaseAlsoFails(Route route) throws Exception {
+        try (Fixture fixture = new Fixture(route)) {
+            RuntimeException expected = new IllegalStateException("Injected failure after deferred acquisition");
+            RuntimeException releaseFailure = new IllegalStateException("Injected failure during deferred release");
+            fixture.referenceKey.failureAfterDeferredAcquire = expected;
+            fixture.referenceKey.failureDuringDeferredRelease = releaseFailure;
+            Future<Object> read = fixture.start();
+            fixture.awaitWaitingOrCompletion();
+            fixture.finishConstruction(true);
+            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(10, TimeUnit.SECONDS));
+            assertSame(expected, failure.getCause());
+            assertArrayEquals(new Throwable[] {releaseFailure}, expected.getSuppressed());
+            fixture.assertReleased();
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = Route.class, names = {"CHANGE_SET", "SESSION_ORIGIN", "SESSION_WAITLOOP"})
+    public void keepsTheOriginalExceptionWhenTheReadReleaseAlsoFails(Route route) throws Exception {
+        try (Fixture fixture = new Fixture(route)) {
+            fixture.finishConstruction(true);
+            RuntimeException expected = new IllegalStateException("Injected failure after read acquisition");
+            RuntimeException releaseFailure = new IllegalStateException("Injected failure during read release");
+            fixture.referenceKey.failureAfterReadAcquire = expected;
+            fixture.referenceKey.failureDuringReadRelease = releaseFailure;
+            Future<Object> read = fixture.start();
+            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(10, TimeUnit.SECONDS));
+            assertSame(expected, failure.getCause());
+            assertArrayEquals(new Throwable[] {releaseFailure}, expected.getSuppressed());
+            fixture.assertReleased();
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = Route.class, names = {"CHANGE_SET", "SESSION_ORIGIN", "SESSION_WAITLOOP"})
+    public void reportsADeferredReleaseFailureWhenTheBlockSucceeded(Route route) throws Exception {
+        try (Fixture fixture = new Fixture(route)) {
+            RuntimeException releaseFailure = new IllegalStateException("Injected failure during deferred release");
+            fixture.referenceKey.failureDuringDeferredRelease = releaseFailure;
+            Future<Object> read = fixture.start();
+            fixture.awaitWaitingOrCompletion();
+            fixture.finishConstruction(true);
+            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(10, TimeUnit.SECONDS));
+            assertSame(releaseFailure, failure.getCause());
+            assertEquals(0, releaseFailure.getSuppressed().length);
+            fixture.assertReleased();
+        }
+    }
 }

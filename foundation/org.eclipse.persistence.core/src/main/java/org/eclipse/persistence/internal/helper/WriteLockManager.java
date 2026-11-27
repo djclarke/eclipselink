@@ -538,6 +538,7 @@ public class WriteLockManager {
         if (lockedCacheKey == null) {
             session.getIdentityMapAccessorInstance().getWriteLockManager().transitionToDeferredLocks(mergeManager);
             lockedCacheKey = session.getIdentityMapAccessorInstance().acquireDeferredLock(primaryKey, descriptor.getJavaClass(), descriptor, true);
+            Throwable failure = null;
             try {
                 Object cachedObject = lockedCacheKey.getObject();
                 if (cachedObject == null) {
@@ -547,8 +548,11 @@ public class WriteLockManager {
                         cachedObject = lockedCacheKey.waitForObject();
                     }
                 }
+            } catch (RuntimeException | Error e) {
+                failure = e;
+                throw e;
             } finally {
-                lockedCacheKey.releaseDeferredLock();
+                lockedCacheKey.releaseDeferredLockAfter(failure);
             }
             return lockedCacheKey;
         } else {

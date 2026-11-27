@@ -392,6 +392,10 @@ public class CacheKeyConcurrencyTest {
         volatile RuntimeException failureAfterDeferredAcquire;
         volatile RuntimeException failureAfterReadAcquire;
         volatile RuntimeException failureDuringObjectWait;
+        /** Thrown once, after a real release, so the lock state stays clean. */
+        volatile RuntimeException failureDuringDeferredRelease;
+        /** Thrown once, after a real release, so the lock state stays clean. */
+        volatile RuntimeException failureDuringReadRelease;
         volatile boolean deferredAcquired;
         /** Retry cap used by clone reads; lowered by tests that hold the key past it. */
         volatile int writerWaitTries = MAX_WAIT_TRIES;
@@ -425,6 +429,26 @@ public class CacheKeyConcurrencyTest {
                 failingThread = Thread.currentThread();
             }
             return acquired;
+        }
+
+        @Override
+        public void releaseDeferredLock() {
+            super.releaseDeferredLock();
+            RuntimeException failure = failureDuringDeferredRelease;
+            if (failure != null) {
+                failureDuringDeferredRelease = null;
+                throw failure;
+            }
+        }
+
+        @Override
+        public void releaseReadLock() {
+            super.releaseReadLock();
+            RuntimeException failure = failureDuringReadRelease;
+            if (failure != null) {
+                failureDuringReadRelease = null;
+                throw failure;
+            }
         }
 
         @Override

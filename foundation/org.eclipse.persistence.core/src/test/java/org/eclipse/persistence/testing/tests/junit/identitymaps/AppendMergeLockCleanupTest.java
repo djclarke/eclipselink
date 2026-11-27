@@ -52,4 +52,23 @@ public class AppendMergeLockCleanupTest {
             fixture.assertReleased();
         }
     }
+
+    @Test
+    public void keepsTheWaitFailureWhenTheDeferredReleaseAlsoFails() throws Exception {
+        try (Fixture fixture = new Fixture(Route.CHANGE_SET)) {
+            fixture.appendLock = true;
+            RuntimeException expected = ConcurrencyException.maxTriesLockOnBuildObjectExceded(
+                    fixture.referenceKey.getActiveThread(), Thread.currentThread());
+            RuntimeException releaseFailure = new IllegalStateException("Injected failure during deferred release");
+            fixture.referenceKey.failureDuringObjectWait = expected;
+            fixture.referenceKey.failureDuringDeferredRelease = releaseFailure;
+            Future<Object> read = fixture.start();
+            fixture.awaitWaitingOrCompletion();
+            fixture.finishConstruction(true);
+            ExecutionException failure = assertThrows(ExecutionException.class, () -> read.get(10, TimeUnit.SECONDS));
+            assertSame(expected, failure.getCause());
+            assertArrayEquals(new Throwable[] {releaseFailure}, expected.getSuppressed());
+            fixture.assertReleased();
+        }
+    }
 }
